@@ -28,10 +28,16 @@ def remove_outliers(data, columns, lower=0.01, upper=0.99):
 
 df = remove_outliers(df, df.select_dtypes(include=['float64', 'int64']).columns)
 
-# 5. Suppression des colonnes fortement corrélées (> 0.85)
-corr_matrix = df.corr()
+corr_matrix = df.corr().abs()
+
+# Identify highly correlated features (above the threshold)
 threshold = 0.85
-to_drop = [col for col in corr_matrix.columns if any(corr_matrix[col] > threshold) and col != "NObeyesdad"]
+upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+
+# Find columns to drop (keeping only one from each correlated pair)
+to_drop = [column for column in upper_tri.columns if any(upper_tri[column] > threshold)]
+
+# Drop the selected columns
 df.drop(columns=to_drop, inplace=True)
 
 # 6. Normalisation des variables numériques
