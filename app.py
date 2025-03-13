@@ -342,7 +342,7 @@ st.markdown("""
 def load_model():
     try:
         # Step 1: Define the URL to the raw model file in the GitHub repository
-        model_url = "https://github.com/YassineLahniche/Coding-Week/raw/main/model/xgb_baseline_.pkl"
+        model_url = "https://github.com/YassineLahniche/Coding-Week/raw/main/model/xgb_baseline.pkl"
 
         # Step 2: Download the model file
         response = requests.get(model_url)
@@ -628,7 +628,7 @@ def generate_text_explanation(shap_values, feature_names, readable_values):
         shap_values = shap_values.flatten()
     
     # Ensure we only use valid indices
-    valid_indices = [i for i in range(len(shap_values)) if i < len(feature_names)]
+    valid_indices = [i for i in range(min(len(shap_values), len(feature_names)))]
     
     # Get indices of top features by absolute value (only from valid indices)
     top_indices = sorted(valid_indices, key=lambda i: abs(shap_values[i]), reverse=True)[:5]
@@ -803,57 +803,141 @@ with tabs[0]:
 
                     # Create SHAP explainer
                     with st.spinner("Generating SHAP explanations..."):
+                        # Verify model type is compatible with TreeExplainer
+                        if not hasattr(model, 'predict'):
+                            st.error("The model doesn't have a predict method and may not be compatible with TreeExplainer")
+                            raise ValueError("Incompatible model type")
+                            
                         explainer = shap.TreeExplainer(model)
                         
                         # Convert input data to numpy array
                         input_array = np.array(input_data).reshape(1, -1)
                         
                         # Get feature names
-                        feature_names = get_feature_names()
+                        try:
+                            feature_names = get_feature_names()
+                        except Exception as e:
+                            st.warning(f"Error getting feature names: {str(e)}")
+                            # Fallback to generic feature names
+                            feature_names = [f"Feature {i}" for i in range(input_array.shape[1])]
                         
-                        # Make sure input_array matches feature_names length
-                        if input_array.shape[1] != len(feature_names):
-                            #st.warning(f"Input dimensions ({input_array.shape[1]}) don't match feature names ({len(feature_names)}). Adjusting...")
-                            
-                            # If input is larger than feature names, truncate input
-                            if input_array.shape[1] > len(feature_names):
-                                input_array = input_array[:, :len(feature_names)]
-                            # If feature names are more than input, truncate feature names
-                            else:
-                                feature_names = feature_names[:input_array.shape[1]]
+                        # Calculate SHAP values with input
+                        try:
+                            shap_values = explainer.shap_values(input_array)
+                        except Exception as e:
+                            st.error(f"Error calculating SHAP values: {str(e)}")
+                            raise
                         
-                        # Calculate SHAP values with the possibly adjusted input
-                        shap_values = explainer.shap_values(input_array)
-                        
-                    
-                        
-                        # Handle different SHAP value formats
+                        # Handle different SHAP value formats and save class_index for later use
                         if isinstance(shap_values, list):
                             # For multi-class models
-                            class_index = min(int(prediction), len(shap_values)-1)
+                            try:
+                                prediction_value = float(prediction)
+                            except (ValueError, TypeError):
+                                st.warning("Invalid prediction value, defaulting to class 0")
+                                prediction_value = 0
+                            
+                            # Ensure class_index is valid
+                            class_index = min(int(prediction_value), len(shap_values)-1)
+                            class_index = max(0, class_index)  # Ensure it's not negative
+                            
                             shap_values_for_instance = shap_values[class_index][0]
                         else:
                             # For binary classification or regression
                             shap_values_for_instance = shap_values[0]
+                            class_index = 0  # Set default for non-multi-class case
                         
                         # Ensure we have a flat array
                         shap_values_for_instance = np.array(shap_values_for_instance).flatten()
                         
-                        # Final dimension check
+                        # Log sizes for debugging
+                        #st.info(f"SHAP values length: {len(shap_values_for_instance)}, Feature names: {len(feature_names)}")
+                        
+                        # Handle the dimension mismatch
                         if len(shap_values_for_instance) != len(feature_names):
-                            #st.warning("SHAP values length doesn't match feature names. Adjusting dimensions...")
-                            # Take the shorter length
-                            min_len = min(len(shap_values_for_instance), len(feature_names))
-                            shap_values_for_instance = shap_values_for_instance[:min_len]
-                            feature_names_adjusted = feature_names[:min_len]
-                        else:
-                            feature_names_adjusted = feature_names
+                            #st.warning(f"SHAP values length ({len(shap_values_for_instance)}) doesn't match feature names ({len(feature_names)}). Adjusting dimensions...")
+                            
+                            # If there are more SHAP values than features, it might be one-hot encoded
+                            if len(shap_values_for_instance) > len(feature_names):
+                                # Approach 1: Sum up SHAP values for each feature (assuming one-hot encoding)
+                                # This is just a heuristic approach
+                                values_per_feature = len(shap_values_for_instance) // len(feature_names)
+                                if values_per_feature * len(feature_names) == len(shap_values_for_instance):
+                                    #st.info(f"Detected possible one-hot encoding. Aggregating SHAP values ({values_per_feature} values per feature).")
+                                    aggregated_values = []
+                                    for i in range(len(feature_names)):
+                                        start_idx = i * values_per_feature
+                                        end_idx = start_idx + values_per_feature
+                                        aggregated_values.append(np.sum(shap_values_for_instance[start_idx:end_idx]))
+                                    shap_values_for_instance = np.array(aggregated_values)
+                                else:
+                                    # Can't determine a clean division, use top features by magnitude
+                                    st.warning("Cannot determine encoding pattern. Using top features by importance.")
+                                    # Sort by absolute value and take top N
+                                    top_indices = np.argsort(np.abs(shap_values_for_instance))[::-1][:len(feature_names)]
+                                    shap_values_for_instance = shap_values_for_instance[top_indices]
+                            else:
+                                # More feature names than SHAP values
+                                # Take only the first N feature names where N is the length of SHAP values
+                                feature_names = feature_names[:len(shap_values_for_instance)]
                         
                         # Get readable values for explanation
-                        readable_values = get_readable_values(input_data)
+                        try:
+                            readable_values = get_readable_values(input_data)
+                        except Exception as e:
+                            st.warning(f"Error getting readable values: {str(e)}")
+                            readable_values = {f: str(input_array[0, i]) for i, f in enumerate(feature_names)}
                         
                         # Display text explanation
-                        st.markdown(generate_text_explanation(shap_values_for_instance, feature_names_adjusted, readable_values), unsafe_allow_html=True)
+                        try:
+                            explanation = generate_text_explanation(shap_values_for_instance, feature_names, readable_values)
+                            # Use components.html instead of markdown to properly render HTML
+                            import streamlit.components.v1 as components
+                            components.html(f"""
+                            <style>
+                            .explanation-card {{
+                                background-color: #ffffff;
+                                border-radius: 0.5rem;
+                                padding: 1rem;
+                                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+                                margin-bottom: 1rem;
+                            }}
+                            .feature-impact {{
+                                display: flex;
+                                justify-content: space-between;
+                                align-items: center;
+                                padding: 0.5rem 0;
+                                border-bottom: 1px solid #f1f5f9;
+                            }}
+                            .feature-impact:last-child {{
+                                border-bottom: none;
+                            }}
+                            .feature-name {{
+                                font-weight: 500;
+                                flex: 2;
+                            }}
+                            .feature-value {{
+                                color: #64748b;
+                                flex: 1;
+                                text-align: center;
+                            }}
+                            .impact-indicator {{
+                                flex: 1;
+                                text-align: right;
+                                font-weight: 500;
+                            }}
+                            </style>
+                            {explanation}
+                            """, height=300)
+                        except Exception as e:
+                            st.error(f"Error generating text explanation: {str(e)}")
+                            # Show simple explanation as fallback
+                            top_features = sorted(zip(feature_names, shap_values_for_instance), 
+                                                key=lambda x: abs(x[1]), reverse=True)[:5]
+                            st.markdown("### Top influencing features:")
+                            for feature, value in top_features:
+                                direction = "increases" if value > 0 else "decreases"
+                                st.markdown(f"- **{feature}**: {direction} risk by {abs(value):.2f}")
                         
                         # SHAP visualization tabs
                         shap_tabs = st.tabs(["Force Plot", "Waterfall Plot", "Feature Importance", "Decision Plot"])
@@ -862,36 +946,156 @@ with tabs[0]:
                             st.markdown("#### Force Plot")
                             st.markdown("Shows how each feature pushes the prediction from the base value.")
                             
-                            # Use adjusted dimensions
-                            force_plot = create_shap_force_plot(explainer, shap_values_for_instance, input_array[0, :len(shap_values_for_instance)], feature_names_adjusted)
-                            st.pyplot(force_plot)
+                            try:
+                                # Fix for force plot - instead of using the create_shap_force_plot function
+                                # Create force plot directly
+                                import matplotlib.pyplot as plt
+                                
+                                plt.figure(figsize=(10, 3))
+                                # Use shap's force_plot and capture as HTML, or use a different visualization
+                                # Option 1: Use matplotlib to create a similar visualization
+                                feature_importance = np.abs(shap_values_for_instance)
+                                sorted_idx = np.argsort(feature_importance)
+                                plt.barh(range(len(sorted_idx)), shap_values_for_instance[sorted_idx], 
+                                        color=['red' if x > 0 else 'blue' for x in shap_values_for_instance[sorted_idx]])
+                                plt.yticks(range(len(sorted_idx)), [feature_names[i] for i in sorted_idx])
+                                plt.title('SHAP Force Plot (Alternative)')
+                                plt.tight_layout()
+                                st.pyplot(plt)
+                                
+                                # Option 2 (if possible): Use shap's plotting directly
+                                # This is a cleaner approach if it works with your SHAP version
+                                try:
+                                    # For newer SHAP versions
+                                    plt.figure()
+                                    shap.plots.waterfall(shap_values_for_instance, max_display=10, show=False)
+                                    st.pyplot(plt)
+                                except:
+                                    pass
+                            except Exception as e:
+                                st.error(f"Error creating force plot: {str(e)}")
                             
                         with shap_tabs[1]:
                             st.markdown("#### Waterfall Plot")
                             st.markdown("Visualizes how each feature contributes to push the model output from the base value to the final prediction.")
                             
-                            # Use adjusted dimensions
-                            waterfall_plot = create_shap_waterfall_plot(explainer, shap_values_for_instance, input_array[0, :len(shap_values_for_instance)], feature_names_adjusted)
-                            st.pyplot(waterfall_plot)
+                            try:
+                                # Direct waterfall implementation
+                                plt.figure(figsize=(10, 6))
+                                # Sort indices by magnitude
+                                indices = np.argsort(np.abs(shap_values_for_instance))[::-1][:10]  # Top 10 features
+                                
+                                # Plot waterfall
+                                cumulative = np.zeros(len(indices) + 1)
+                                cumulative[1:] = np.cumsum(shap_values_for_instance[indices])
+                                base_value = explainer.expected_value
+                                
+                                # Handle different formats of expected_value
+                                if isinstance(base_value, list) or isinstance(base_value, np.ndarray):
+                                    try:
+                                        base_value = base_value[class_index]
+                                    except:
+                                        base_value = base_value[0]  # Default to first class if class_index is invalid
+                                
+                                # Add base value
+                                plt.barh(0, base_value, color='gray')
+                                plt.text(base_value, 0, f'Base: {base_value:.2f}', ha='left', va='center')
+                                
+                                # Add each feature's contribution
+                                for i, idx in enumerate(indices):
+                                    plt.barh(i+1, shap_values_for_instance[idx], 
+                                            left=cumulative[i], 
+                                            color='red' if shap_values_for_instance[idx] > 0 else 'blue')
+                                    plt.text(cumulative[i+1], i+1, 
+                                            f'{feature_names[idx]}: {shap_values_for_instance[idx]:.2f}', 
+                                            ha='left' if shap_values_for_instance[idx] > 0 else 'right', 
+                                            va='center')
+                                
+                                # Final prediction
+                                plt.barh(len(indices)+1, 0, left=cumulative[-1] + base_value, color='gray')
+                                plt.text(cumulative[-1] + base_value, len(indices)+1, 
+                                        f'Final: {cumulative[-1] + base_value:.2f}', 
+                                        ha='left', va='center')
+                                
+                                plt.yticks(range(len(indices) + 2), 
+                                        ['Base Value'] + [feature_names[i] for i in indices] + ['Final Prediction'])
+                                plt.title('Waterfall Plot')
+                                plt.grid(axis='x', linestyle='--', alpha=0.7)
+                                plt.tight_layout()
+                                st.pyplot(plt)
+                            except Exception as e:
+                                st.error(f"Error creating waterfall plot: {str(e)}")
                             
                         with shap_tabs[2]:
                             st.markdown("#### Feature Importance")
                             st.markdown("Shows which features are most important for this prediction.")
                             
-                            # For the bar plot, use the adjusted dimensions
-                            bar_plot = create_shap_bar_plot(explainer, input_array[:, :len(feature_names_adjusted)], feature_names_adjusted)
-                            st.pyplot(bar_plot)
+                            try:
+                                # Create a simple bar chart directly
+                                plt.figure(figsize=(10, 6))
+                                importances = np.abs(shap_values_for_instance)
+                                indices = np.argsort(importances)[::-1]
+                                plt.barh(range(len(indices)), importances[indices], color='skyblue')
+                                plt.yticks(range(len(indices)), [feature_names[i] for i in indices])
+                                plt.xlabel('Absolute SHAP Value (Feature Importance)')
+                                plt.title('Feature Importance')
+                                plt.tight_layout()
+                                st.pyplot(plt)
+                            except Exception as e:
+                                st.error(f"Error creating importance plot: {str(e)}")
                             
                         with shap_tabs[3]:
                             st.markdown("#### Decision Plot")
                             st.markdown("Shows the path from the base value to the final prediction.")
                             
-                            # Use adjusted dimensions
-                            decision_plot = create_shap_decision_plot(explainer, shap_values_for_instance, input_array[0, :len(shap_values_for_instance)], feature_names_adjusted)
-                            st.pyplot(decision_plot)
-                except:
-                    st.error("Failed to load the prediction model. Please try again later.")
-
+                            try:
+                                # Create an alternative decision plot
+                                plt.figure(figsize=(10, 6))
+                                # Sort values by importance
+                                sorted_idx = np.argsort(np.abs(shap_values_for_instance))[::-1][:10]  # Top 10
+                                
+                                # Get the expected value
+                                base_value = explainer.expected_value
+                                
+                                # Handle different formats of expected_value
+                                if isinstance(base_value, list) or isinstance(base_value, np.ndarray):
+                                    try:
+                                        base_value = base_value[class_index]
+                                    except:
+                                        base_value = base_value[0]  # Default to first class if class_index is invalid
+                                    
+                                # Calculate cumulative values
+                                sorted_values = shap_values_for_instance[sorted_idx]
+                                cum_values = np.cumsum(sorted_values)
+                                cum_values = np.insert(cum_values, 0, 0)  # Start from 0
+                                
+                                # Plot
+                                for i in range(1, len(cum_values)):
+                                    plt.plot([i-1, i], [base_value + cum_values[i-1], base_value + cum_values[i]], 
+                                            marker='o', color='blue' if sorted_values[i-1] > 0 else 'red')
+                                
+                                plt.axhline(y=base_value, color='gray', linestyle='--', label='Base Value')
+                                plt.text(0, base_value, f'Base: {base_value:.2f}', va='bottom', ha='left')
+                                
+                                # Final value
+                                plt.text(len(sorted_idx), base_value + cum_values[-1], 
+                                        f'Final: {base_value + cum_values[-1]:.2f}', va='bottom', ha='right')
+                                
+                                plt.xticks(range(len(sorted_idx)), 
+                                        [feature_names[i] for i in sorted_idx], rotation=45, ha='right')
+                                plt.title('Decision Plot: Path to Prediction')
+                                plt.xlabel('Features (ordered by importance)')
+                                plt.ylabel('Prediction Value')
+                                plt.grid(True, linestyle='--', alpha=0.7)
+                                plt.tight_layout()
+                                st.pyplot(plt)
+                            except Exception as e:
+                                st.error(f"Error creating decision plot: {str(e)}")
+                
+                except Exception as e:
+                    st.error(f"Error in SHAP analysis: {str(e)}")
+                    import traceback
+                    st.error(f"Detailed error: {traceback.format_exc()}")
 with tabs[1]:
     st.markdown('<h2 class="subheader">Your Health Profile</h2>', unsafe_allow_html=True)
     
