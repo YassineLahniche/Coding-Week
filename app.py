@@ -342,7 +342,7 @@ st.markdown("""
 def load_model():
     try:
         # Step 1: Define the URL to the raw model file in the GitHub repository
-        model_url = "https://github.com/YassineLahniche/Coding-Week/raw/main/model/xgb_baseline.pkl"
+        model_url = "https://github.com/YassineLahniche/Coding-Week/raw/main/model/xgb_baseline_.pkl"
 
         # Step 2: Download the model file
         response = requests.get(model_url)
