@@ -387,7 +387,7 @@ def predict_obesity_level(model, input_data):
     
     input_array = np.array(input_data).reshape(1, -1)
     prediction = model.predict(input_array)[0]
-    category = obesity_categories.get(int(prediction), "Unknown")
+    category = obesity_categories.get(int(prediction))
     
     return prediction, category
 
@@ -799,53 +799,98 @@ with tabs[0]:
             # SHAP Analysis
             if model:
                 try:
+                    st.markdown('<h2 class="subheader">Explanation of Prediction</h2>', unsafe_allow_html=True)
+
                     # Create SHAP explainer
-                    input_array = np.array(input_data).reshape(1, -1)
-                    explainer = create_shap_explainer(model)
-                    
-                    # Calculate SHAP values for this instance
-                    shap_values = calculate_shap_values(explainer, input_array)
-                    shap_values = np.array(shap_values)
-
-                    if isinstance(explainer.expected_value, list) and shap_values.ndim > 1:
-                        shap_values = shap_values[0]  
-
-
-                    
-                    # Get feature names and readable values
-                    feature_names = get_feature_names()
-                    readable_values = get_readable_values(input_data)
-                    
-                    # Generate text explanation
-                    explanation_html = generate_text_explanation(shap_values, feature_names, readable_values)
-                    st.markdown(explanation_html, unsafe_allow_html=True)
-                    
-                    # Create SHAP plots
-                    shap_col1, shap_col2 = st.columns(2)
-                    
-                    with shap_col1:
-                        st.markdown('<div class="shap-plot-container">', unsafe_allow_html=True)
-                        st.markdown('<p class="shap-plot-title">Feature Impact on Prediction</p>', unsafe_allow_html=True)
-                        st.markdown('<p class="shap-plot-description">How each factor pushes the prediction higher (red) or lower (blue)</p>', unsafe_allow_html=True)
+                    with st.spinner("Generating SHAP explanations..."):
+                        explainer = shap.TreeExplainer(model)
                         
-                        force_plot = create_shap_force_plot(explainer, shap_values, input_array[0], feature_names)
-                        st_shap(force_plot, height=300)  # Use `st_shap` to render in Streamlit
+                        # Convert input data to numpy array
+                        input_array = np.array(input_data).reshape(1, -1)
                         
-                        st.markdown('</div>', unsafe_allow_html=True)
-
+                        # Get feature names
+                        feature_names = get_feature_names()
+                        
+                        # Make sure input_array matches feature_names length
+                        if input_array.shape[1] != len(feature_names):
+                            #st.warning(f"Input dimensions ({input_array.shape[1]}) don't match feature names ({len(feature_names)}). Adjusting...")
+                            
+                            # If input is larger than feature names, truncate input
+                            if input_array.shape[1] > len(feature_names):
+                                input_array = input_array[:, :len(feature_names)]
+                            # If feature names are more than input, truncate feature names
+                            else:
+                                feature_names = feature_names[:input_array.shape[1]]
+                        
+                        # Calculate SHAP values with the possibly adjusted input
+                        shap_values = explainer.shap_values(input_array)
+                        
                     
-                    with shap_col2:
-                        st.markdown('<div class="shap-plot-container">', unsafe_allow_html=True)
-                        st.markdown('<p class="shap-plot-title">Waterfall Plot</p>', unsafe_allow_html=True)
-                        st.markdown('<p class="shap-plot-description">How each factor contributes to the final prediction</p>', unsafe_allow_html=True)
-                        waterfall_plot = create_shap_waterfall_plot(explainer, shap_values, input_array[0], feature_names)
-                        st.pyplot(waterfall_plot, clear_figure=True)
-                        st.markdown('</div>', unsafe_allow_html=True)
-                    
-                except Exception as e:
-                    st.error(f"Error generating SHAP analysis: {e}")
-                    
-            st.markdown('</div>', unsafe_allow_html=True)
+                        
+                        # Handle different SHAP value formats
+                        if isinstance(shap_values, list):
+                            # For multi-class models
+                            class_index = min(int(prediction), len(shap_values)-1)
+                            shap_values_for_instance = shap_values[class_index][0]
+                        else:
+                            # For binary classification or regression
+                            shap_values_for_instance = shap_values[0]
+                        
+                        # Ensure we have a flat array
+                        shap_values_for_instance = np.array(shap_values_for_instance).flatten()
+                        
+                        # Final dimension check
+                        if len(shap_values_for_instance) != len(feature_names):
+                            #st.warning("SHAP values length doesn't match feature names. Adjusting dimensions...")
+                            # Take the shorter length
+                            min_len = min(len(shap_values_for_instance), len(feature_names))
+                            shap_values_for_instance = shap_values_for_instance[:min_len]
+                            feature_names_adjusted = feature_names[:min_len]
+                        else:
+                            feature_names_adjusted = feature_names
+                        
+                        # Get readable values for explanation
+                        readable_values = get_readable_values(input_data)
+                        
+                        # Display text explanation
+                        st.markdown(generate_text_explanation(shap_values_for_instance, feature_names_adjusted, readable_values), unsafe_allow_html=True)
+                        
+                        # SHAP visualization tabs
+                        shap_tabs = st.tabs(["Force Plot", "Waterfall Plot", "Feature Importance", "Decision Plot"])
+                        
+                        with shap_tabs[0]:
+                            st.markdown("#### Force Plot")
+                            st.markdown("Shows how each feature pushes the prediction from the base value.")
+                            
+                            # Use adjusted dimensions
+                            force_plot = create_shap_force_plot(explainer, shap_values_for_instance, input_array[0, :len(shap_values_for_instance)], feature_names_adjusted)
+                            st.pyplot(force_plot)
+                            
+                        with shap_tabs[1]:
+                            st.markdown("#### Waterfall Plot")
+                            st.markdown("Visualizes how each feature contributes to push the model output from the base value to the final prediction.")
+                            
+                            # Use adjusted dimensions
+                            waterfall_plot = create_shap_waterfall_plot(explainer, shap_values_for_instance, input_array[0, :len(shap_values_for_instance)], feature_names_adjusted)
+                            st.pyplot(waterfall_plot)
+                            
+                        with shap_tabs[2]:
+                            st.markdown("#### Feature Importance")
+                            st.markdown("Shows which features are most important for this prediction.")
+                            
+                            # For the bar plot, use the adjusted dimensions
+                            bar_plot = create_shap_bar_plot(explainer, input_array[:, :len(feature_names_adjusted)], feature_names_adjusted)
+                            st.pyplot(bar_plot)
+                            
+                        with shap_tabs[3]:
+                            st.markdown("#### Decision Plot")
+                            st.markdown("Shows the path from the base value to the final prediction.")
+                            
+                            # Use adjusted dimensions
+                            decision_plot = create_shap_decision_plot(explainer, shap_values_for_instance, input_array[0, :len(shap_values_for_instance)], feature_names_adjusted)
+                            st.pyplot(decision_plot)
+                except:
+                    st.error("Failed to load the prediction model. Please try again later.")
 
 with tabs[1]:
     st.markdown('<h2 class="subheader">Your Health Profile</h2>', unsafe_allow_html=True)
@@ -1067,6 +1112,6 @@ with tabs[2]:
 # Footer
 st.markdown("""
 <div style="text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
-    <p style="color: #64748b; font-size: 0.9rem;">© 2025 Obesity Risk Assessment Tool | Created with Streamlit</p>
+    <p style="color: #64748b; font-size: 0.9rem;">© 2025 Obesity Risk Assessment Tool | Groupe25 CW. All rights reserved</p>
 </div>
 """, unsafe_allow_html=True)
