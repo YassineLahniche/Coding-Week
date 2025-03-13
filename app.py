@@ -516,10 +516,7 @@ with col2:
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-                
-                # ----- SHAP Analysis Section -----
-                st.markdown('<h2 class="subheader">Explanation of Prediction</h2>', unsafe_allow_html=True)
-                
+                               
                 # Create SHAP explainer
                 # ----- SHAP Analysis Section -----
                 st.markdown('<h2 class="subheader">Explanation of Prediction</h2>', unsafe_allow_html=True)
@@ -536,7 +533,7 @@ with col2:
                     
                     # Make sure input_array matches feature_names length
                     if input_array.shape[1] != len(feature_names):
-                        st.warning(f"Input dimensions ({input_array.shape[1]}) don't match feature names ({len(feature_names)}). Adjusting...")
+                        #st.warning(f"Input dimensions ({input_array.shape[1]}) don't match feature names ({len(feature_names)}). Adjusting...")
                         
                         # If input is larger than feature names, truncate input
                         if input_array.shape[1] > len(feature_names):
@@ -548,33 +545,27 @@ with col2:
                     # Calculate SHAP values with the possibly adjusted input
                     shap_values = explainer.shap_values(input_array)
                     
-                    # Debug information
-                    st.write(f"Input shape: {input_array.shape}")
-                    st.write(f"Feature names count: {len(feature_names)}")
+                
                     
                     # Handle different SHAP value formats
                     if isinstance(shap_values, list):
                         # For multi-class models
                         class_index = min(int(prediction), len(shap_values)-1)
                         shap_values_for_instance = shap_values[class_index][0]
-                        st.write(f"SHAP values shape (class {class_index}): {shap_values[class_index].shape}")
                     else:
                         # For binary classification or regression
                         shap_values_for_instance = shap_values[0]
-                        st.write(f"SHAP values shape: {shap_values.shape}")
                     
                     # Ensure we have a flat array
                     shap_values_for_instance = np.array(shap_values_for_instance).flatten()
-                    st.write(f"Flattened SHAP values length: {len(shap_values_for_instance)}")
                     
                     # Final dimension check
                     if len(shap_values_for_instance) != len(feature_names):
-                        st.warning("SHAP values length doesn't match feature names. Adjusting dimensions...")
+                        #st.warning("SHAP values length doesn't match feature names. Adjusting dimensions...")
                         # Take the shorter length
                         min_len = min(len(shap_values_for_instance), len(feature_names))
                         shap_values_for_instance = shap_values_for_instance[:min_len]
                         feature_names_adjusted = feature_names[:min_len]
-                        st.write(f"Adjusted to length: {min_len}")
                     else:
                         feature_names_adjusted = feature_names
                     
@@ -582,7 +573,6 @@ with col2:
                     readable_values = get_readable_values(input_data)
                     
                     # Display text explanation
-                    st.markdown("#### Key Factors Influencing This Prediction")
                     st.markdown(generate_text_explanation(shap_values_for_instance, feature_names_adjusted, readable_values), unsafe_allow_html=True)
                     
                     # SHAP visualization tabs
