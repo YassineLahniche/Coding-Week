@@ -14,10 +14,5 @@ jobs:
         with:
           python-version: '3.9'
 
-      - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-          pip install pytest
-
       - name: Test Model Loading
         run: pytest tests/test_model.py
