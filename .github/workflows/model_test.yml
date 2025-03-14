@@ -1,0 +1,23 @@
+name: Model Load Test
+
+on: [push, pull_request]
+
+jobs:
+  model-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Test Model Loading
+        run: pytest tests/test_model.py
