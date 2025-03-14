@@ -334,6 +334,14 @@ st.markdown("""
         border-radius: 6px;
         margin-top: 0.5rem;
     }
+    .card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.1);
+    }
+    .stButton>button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 10px rgba(59, 130, 246, 0.3);
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -378,11 +386,11 @@ def predict_obesity_level(model, input_data):
     obesity_categories = {
         0: 'Insufficient Weight',
         1: 'Normal Weight',
-        2: 'Overweight Level I',
-        3: 'Overweight Level II',
-        4: 'Obesity Type I',
-        5: 'Obesity Type II',
-        6: 'Obesity Type III'
+        2: 'Obesity Type I',
+        3: 'Obesity Type II',
+        4: 'Obesity Type III',
+        5: 'Overweight Level I',
+        6: 'Overweight Level II'
     }
     
     input_array = np.array(input_data).reshape(1, -1)
