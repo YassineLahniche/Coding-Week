@@ -1,4 +1,4 @@
-name: Streamlit UI Test
+name: Model Test
 on: [push, pull_request]
 jobs:
   ui-test:
@@ -14,6 +14,6 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install pytest
-      - name: Test Streamlit App Rendering
+      - name: Test Model Loading
         run: |
-          python -m pytest tests/test_ui.py
+          python -m pytest tests/test_model.py
