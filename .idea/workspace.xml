@@ -53,6 +53,8 @@
   "keyToString": {
     "Python tests.pytest in test_ui.py.executor": "Run",
     "Python.app.executor": "Run",
+    "Python.main.executor": "Run",
+    "Python.untitled4.executor": "Run",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "last_opened_file_path": "C:/Users/m si/Documents/GitHub/Coding-Week/model"
   }
