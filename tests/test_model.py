@@ -1,11 +1,8 @@
 import pytest
-import streamlit.web.bootstrap as bootstrap
-import threading
+import unittest.mock as mock
 
-def run_streamlit():
-    bootstrap.run('app.py', command_line=[], args=[])
-
-def test_streamlit_startup():
-    thread = threading.Thread(target=run_streamlit, daemon=True)
-    thread.start()
-    assert thread.is_alive(), "Streamlit app failed to start"
+@mock.patch('streamlit.spinner')  # Example of mocking a streamlit component
+def test_model_loading(mock_spinner):
+    from app import load_model
+    model = load_model()
+    assert model is not None, "Model failed to load"
