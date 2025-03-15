@@ -1,24 +1,19 @@
-name: Model Load Test
-
+name: Streamlit UI Test
 on: [push, pull_request]
-
 jobs:
-  model-test:
+  ui-test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          pip install pytest  # Ensure pytest is installed
-
-      - name: Test Model Loading
-        run: pytest tests/test_model.py
+          pip install -r requirements.txt
+          pip install pytest
+      - name: Test Streamlit App Rendering
+        run: |
+          python -m pytest tests/test_ui.py
