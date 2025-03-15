@@ -1,77 +1,113 @@
-import seaborn as sns
-import matplotlib.pyplot as plt
 import pandas as pd
-from sklearn.preprocessing import LabelEncoder, MinMaxScaler
-from sklearn.model_selection import train_test_split
+import numpy as np
+from sklearn.preprocessing import LabelEncoder
 from ucimlrepo import fetch_ucirepo
-import os
+import sys
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, classification_report
+from sklearn.model_selection import train_test_split, RandomizedSearchCV, StratifiedKFold
+import xgboost as xgb
+from catboost import CatBoostClassifier
+from imblearn.under_sampling import RandomUnderSampler
+import time
+from scipy.stats import randint, uniform
+import pickle
 
 
-# 1. Chargement du dataset
+# Load the dataset
 dataset = fetch_ucirepo(id=544)
 df = dataset.data.original.copy()
 
-# 2. Vérification des valeurs manquantes et suppression
+# Drop rows with missing values
 df.dropna(inplace=True)
 
-# 3. Encodage des variables catégoriques
+# Identify categorical columns
 categorical_columns = df.select_dtypes(include=['object']).columns
+
+# Initialize LabelEncoder for each categorical column
 label_encoders = {col: LabelEncoder().fit(df[col]) for col in categorical_columns}
+
+# Apply LabelEncoder to each categorical column
 for col in categorical_columns:
     df[col] = label_encoders[col].transform(df[col])
 
-# 4. Suppression des valeurs aberrantes (outliers)
+# Create a dictionary to store the mapping of original values to encoded values
+value_to_code_mapping = {}
+
+# Iterate over each categorical column and its corresponding LabelEncoder
+for col, le in label_encoders.items():
+    # Create a dictionary for the current column
+    col_mapping = {original_value: encoded_value for original_value, encoded_value in
+                   zip(le.classes_, le.transform(le.classes_))}
+
+    # Add the column's mapping to the main dictionary
+    value_to_code_mapping[col] = col_mapping
+
+# Function to remove outliers
 def remove_outliers(data, columns, lower=0.01, upper=0.99):
-    """Supprime les valeurs extrêmes en utilisant les percentiles."""
+    """Remove extreme values using percentiles."""
     for col in columns:
         q1, q99 = data[col].quantile([lower, upper])
         data = data[(data[col] >= q1) & (data[col] <= q99)]
     return data
 
-df = remove_outliers(df, df.select_dtypes(include=['float64', 'int64']).columns)
-
-# 5. Suppression des colonnes fortement corrélées (> 0.85)
-"""corr_matrix = df.corr()
-threshold = 0.85
-to_drop = [col for col in corr_matrix.columns if any(corr_matrix[col] > threshold) and col != "NObeyesdad"]
-df.drop(columns=to_drop, inplace=True)"""
-
-# 6. Normalisation des variables numériques
-scaler = MinMaxScaler()
+# Remove outliers from numerical columns
 numerical_columns = df.select_dtypes(include=['float64', 'int64']).columns
-df[numerical_columns] = scaler.fit_transform(df[numerical_columns])
+df = remove_outliers(df, numerical_columns)
 
-print(df.head)
+# Compute the correlation matrix
+corr_matrix = df.corr().abs()
 
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, roc_curve, auc
-from sklearn.model_selection import train_test_split, GridSearchCV
-import xgboost as xgb
-from catboost import CatBoostClassifier
-import plotly.graph_objects as go
-from matplotlib.patches import Circle, RegularPolygon
-from matplotlib.path import Path
-from matplotlib.projections import register_projection
-from matplotlib.projections.polar import PolarAxes
-from matplotlib.spines import Spine
-from matplotlib.transforms import Affine2D
-import matplotlib.cm as cm
-import pickle
+# Identify highly correlated features (above the threshold)
+threshold = 0.85
+upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
 
+# Find columns to drop (keeping only one from each correlated pair)
+to_drop = [column for column in upper_tri.columns if any(upper_tri[column] > threshold)]
 
+# Drop the selected columns
+df.drop(columns=to_drop, inplace=True)
+
+#Optimize the dataset
+float_cols = ["Age", "Height", "Weight", "FCVC", "NCP", "CH2O", "FAF", "TUE"]
+int_cols = ["Gender", "family_history_with_overweight", "FAVC", "CAEC", "SMOKE", "SCC", "CALC", "MTRANS", "NObeyesdad"]
+def optimize_memory(df, float_cols, int_cols):
+  df[float_cols] = df[float_cols].astype("float32")
+  df[int_cols] = df[int_cols].astype("int32")
+  return df
+df_opt = optimize_memory(df.copy(), float_cols, int_cols)
+
+#Compare the old and new memory usage
+def measure_memory_usage(dataset):
+    return sys.getsizeof(dataset)
+
+def demonstrate_memory_improvement(df, df_32):
+    memory_64 = measure_memory_usage(df)
+    memory_32 = measure_memory_usage(df_32)
+
+    improvement = memory_64 - memory_32
+    improvement_percentage = (improvement / memory_64) * 100
+
+    print(f"Memory usage of float64 dataset: {memory_64} bytes")
+    print(f"Memory usage of mixed (float32 + int32) dataset: {memory_32} bytes")
+    print(f"Memory improvement: {improvement} bytes ({improvement_percentage:.2f}%)")
+
+demonstrate_memory_improvement(df, df_opt)
+
+#Separate features and results
 X = df.drop("NObeyesdad", axis=1)
 y = df["NObeyesdad"]
-Y = pd.cut(y, bins=6, labels=[0,1,2,3,4,5])
-X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
 
+#Undersampling data to remove biased distributions
+undersampler = RandomUnderSampler(sampling_strategy='auto', random_state=42)
+X, y = undersampler.fit_resample(X, y)
+
+# Split the data into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
 
 # Random Forest Classifier
 print("Training Random Forest Classifier...")
-rf_model = RandomForestClassifier(n_estimators=100, random_state=42)
+rf_model = RandomForestClassifier(n_estimators=100, random_state=42, class_weight='balanced')
 rf_model.fit(X_train, y_train)
 
 # CatBoost Classifier
@@ -81,17 +117,14 @@ catboost_model.fit(X_train, y_train)
 
 # Baseline XGBoost Classifier
 print("Training Baseline XGBoost Classifier...")
-xgb_baseline = xgb.XGBClassifier(random_state=42)
+xgb_baseline = xgb.XGBClassifier(
+    objective='multi:softprob',
+    num_class=6,  # Specify the number of classes
+    random_state=42
+)
 xgb_baseline.fit(X_train, y_train)
 
-from sklearn.model_selection import train_test_split, RandomizedSearchCV, StratifiedKFold
-from sklearn.metrics import f1_score, accuracy_score, precision_score, recall_score, confusion_matrix
-from sklearn.metrics import roc_auc_score, roc_curve, precision_recall_curve, auc
-import xgboost as xgb
-from scipy.stats import randint, uniform
-import time
-
-
+#Tuning the xgboost classifier parameters
 def get_parameter_distribution():
     param_dist = {
         'n_estimators': randint(50, 500),
@@ -166,7 +199,7 @@ def tune_xgboost(X_train, y_train, scoring='f1_weighted', n_iter=50, cv=5, n_job
     time_taken = time.time() - start_time
     print(f"XGBoost tuning completed in {time_taken:.2f} seconds")
     print(f"Best {scoring} score: {search.best_score_:.4f}")
-    print("Best parameters:")
+    print("Best parameters for xgb:")
     for param, value in search.best_params_.items():
         print(f"  {param}: {value}")
 
@@ -175,11 +208,13 @@ def tune_xgboost(X_train, y_train, scoring='f1_weighted', n_iter=50, cv=5, n_job
 
 xgb_tuned = tune_xgboost(X_train, y_train)[0]
 
+# Make predictions
 y1_pred = rf_model.predict(X_test)
 y2_pred = catboost_model.predict(X_test)
 y3_pred = xgb_baseline.predict(X_test)
 y4_pred = xgb_tuned.predict(X_test)
 
+# Function to evaluate models
 def evaluate_model(y_true, preds, model_name):
     accuracy = accuracy_score(y_true, preds)
     precision = precision_score(y_true, preds, average="weighted")
@@ -199,7 +234,12 @@ evaluate_model(y_test, y2_pred, "CatBoost")
 evaluate_model(y_test, y3_pred, "XGBoost Baseline")
 evaluate_model(y_test, y4_pred, "XGBoost Tuned")
 
-import pickle
+print(classification_report(y_test, y1_pred))
+print(classification_report(y_test, y2_pred))
+print(classification_report(y_test, y3_pred))
+print(classification_report(y_test, y4_pred))
+
+# Save the trained models
 with open("xgb_baseline.pkl", "wb") as file:
     pickle.dump(xgb_baseline, file)
 with open("xgb_tuned.pkl", "wb") as file:
