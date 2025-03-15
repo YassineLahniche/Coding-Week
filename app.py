@@ -8,8 +8,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import json
-import shap 
-from streamlit_shap import st_shap
+import shap
 
 # Set page configuration
 st.set_page_config(

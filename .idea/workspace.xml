@@ -8,6 +8,9 @@
       <change beforePath="$PROJECT_DIR$/.github/workflows/CI-CD_pipeline.yml" beforeDir="false" afterPath="$PROJECT_DIR$/.github/workflows/CI-CD_pipeline.yml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.github/workflows/model_test.yml" beforeDir="false" afterPath="$PROJECT_DIR$/.github/workflows/model_test.yml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.github/workflows/ui_test.yml" beforeDir="false" afterPath="$PROJECT_DIR$/.github/workflows/ui_test.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/Coding-Week.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/Coding-Week.iml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/app.py" afterDir="false" />
@@ -49,6 +52,7 @@
   <component name="PropertiesComponent"><![CDATA[{
   "keyToString": {
     "Python tests.pytest in test_ui.py.executor": "Run",
+    "Python.app.executor": "Run",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "last_opened_file_path": "C:/Users/m si/Documents/GitHub/Coding-Week/model"
   }
