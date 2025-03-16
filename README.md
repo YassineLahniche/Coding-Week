@@ -98,13 +98,13 @@ Coding-Week/
 │   ├── data.csv                  # Raw dataset file
 │   └── processed_obesity_dataset.csv # Preprocessed dataset
 ├── model/
-│   ├── utils/
-│   │   ├── Preprocessing.py      # Data preprocessing utilities
-│   │   └── evaluation.py         # Model evaluation functions
 │   ├── catboost_model.pkl        # Saved CatBoost model
 │   ├── rf_model.pkl              # Saved Random Forest model
 │   ├── xgb_baseline.pkl          # Saved XGBoost baseline model
 │   └── xgb_tuned_.pkl            # Saved tuned XGBoost model
+├── utils/
+│   │   ├── Preprocessing.py      # Data preprocessing utilities
+│   │   └── evaluation.py         # Model evaluation functions
 ├── notebooks/
 │   ├── PreProcessing.ipynb       # Data preprocessing notebook
 │   ├── Training_models.ipynb     # Model training notebook
