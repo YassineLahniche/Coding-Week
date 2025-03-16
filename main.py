@@ -1,98 +1,79 @@
 import seaborn as sns
 import matplotlib.pyplot as plt
-import pandas as pd
-from sklearn.preprocessing import LabelEncoder, MinMaxScaler
-from sklearn.model_selection import train_test_split
-from ucimlrepo import fetch_ucirepo
-import os
-
-
-# 1. Chargement du dataset
-dataset = fetch_ucirepo(id=544)
-df = dataset.data.original.copy()
-
-# 2. Vérification des valeurs manquantes et suppression
-df.dropna(inplace=True)
-
-# 3. Encodage des variables catégoriques
-categorical_columns = df.select_dtypes(include=['object']).columns
-label_encoders = {col: LabelEncoder().fit(df[col]) for col in categorical_columns}
-for col in categorical_columns:
-    df[col] = label_encoders[col].transform(df[col])
-
-# 4. Suppression des valeurs aberrantes (outliers)
-def remove_outliers(data, columns, lower=0.01, upper=0.99):
-    """Supprime les valeurs extrêmes en utilisant les percentiles."""
-    for col in columns:
-        q1, q99 = data[col].quantile([lower, upper])
-        data = data[(data[col] >= q1) & (data[col] <= q99)]
-    return data
-
-df = remove_outliers(df, df.select_dtypes(include=['float64', 'int64']).columns)
-
-# 5. Suppression des colonnes fortement corrélées (> 0.85)
-"""corr_matrix = df.corr()
-threshold = 0.85
-to_drop = [col for col in corr_matrix.columns if any(corr_matrix[col] > threshold) and col != "NObeyesdad"]
-df.drop(columns=to_drop, inplace=True)"""
-
-# 6. Normalisation des variables numériques
-scaler = MinMaxScaler()
-numerical_columns = df.select_dtypes(include=['float64', 'int64']).columns
-df[numerical_columns] = scaler.fit_transform(df[numerical_columns])
-
-print(df.head)
-
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, roc_curve, auc
-from sklearn.model_selection import train_test_split, GridSearchCV
-import xgboost as xgb
-from catboost import CatBoostClassifier
+import os
+import time
+import pickle
 import plotly.graph_objects as go
+import matplotlib.cm as cm
 from matplotlib.patches import Circle, RegularPolygon
 from matplotlib.path import Path
 from matplotlib.projections import register_projection
 from matplotlib.projections.polar import PolarAxes
 from matplotlib.spines import Spine
 from matplotlib.transforms import Affine2D
-import matplotlib.cm as cm
-import pickle
-
-
-X = df.drop("NObeyesdad", axis=1)
-y = df["NObeyesdad"]
-Y = pd.cut(y, bins=6, labels=[0,1,2,3,4,5])
-X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
-
-
-# Random Forest Classifier
-print("Training Random Forest Classifier...")
-rf_model = RandomForestClassifier(n_estimators=100, random_state=42)
-rf_model.fit(X_train, y_train)
-
-# CatBoost Classifier
-print("Training CatBoost Classifier...")
-catboost_model = CatBoostClassifier(iterations=100, depth=5, learning_rate=0.1, random_state=42, verbose=False)
-catboost_model.fit(X_train, y_train)
-
-# Baseline XGBoost Classifier
-print("Training Baseline XGBoost Classifier...")
-xgb_baseline = xgb.XGBClassifier(random_state=42)
-xgb_baseline.fit(X_train, y_train)
-
-from sklearn.model_selection import train_test_split, RandomizedSearchCV, StratifiedKFold
-from sklearn.metrics import f1_score, accuracy_score, precision_score, recall_score, confusion_matrix
-from sklearn.metrics import roc_auc_score, roc_curve, precision_recall_curve, auc
-import xgboost as xgb
+from ucimlrepo import fetch_ucirepo
+from sklearn.preprocessing import LabelEncoder, MinMaxScaler
+from sklearn.model_selection import train_test_split, GridSearchCV, RandomizedSearchCV, StratifiedKFold
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score, f1_score, 
+    roc_auc_score, roc_curve, auc, confusion_matrix, 
+    precision_recall_curve
+)
 from scipy.stats import randint, uniform
-import time
+import xgboost as xgb
+from catboost import CatBoostClassifier
 
 
+# 1. Load the dataset
+def load_data():
+    """Load the UCI obesity dataset"""
+    print("Loading UCI obesity dataset...")
+    dataset = fetch_ucirepo(id=544)
+    df = dataset.data.original.copy()
+    return df
+
+
+# 2. Preprocess the data
+def preprocess_data(df):
+    """
+    Preprocess the dataset:
+    - Remove missing values
+    - Encode categorical variables
+    - Remove outliers
+    """
+    print("Preprocessing data...")
+    
+    # Remove missing values
+    df.dropna(inplace=True)
+    
+    # Encode categorical variables
+    categorical_columns = df.select_dtypes(include=['object']).columns
+    label_encoders = {col: LabelEncoder().fit(df[col]) for col in categorical_columns}
+    for col in categorical_columns:
+        df[col] = label_encoders[col].transform(df[col])
+    
+    # Remove outliers
+    df = remove_outliers(df, df.select_dtypes(include=['float64', 'int64']).columns)
+    
+    
+    return df
+
+
+def remove_outliers(data, columns, lower=0.01, upper=0.99):
+    """Remove extreme values using percentiles."""
+    print("Removing outliers...")
+    for col in columns:
+        q1, q99 = data[col].quantile([lower, upper])
+        data = data[(data[col] >= q1) & (data[col] <= q99)]
+    return data
+
+
+# 3. Parameter distribution for XGBoost tuning
 def get_parameter_distribution():
+    """Define parameter distribution for XGBoost tuning"""
     param_dist = {
         'n_estimators': randint(50, 500),
         'max_depth': randint(3, 10),
@@ -108,7 +89,7 @@ def get_parameter_distribution():
     return param_dist
 
 
-# Fine-tune XGBoost with RandomizedSearchCV
+# 4. Fine-tune XGBoost with RandomizedSearchCV
 def tune_xgboost(X_train, y_train, scoring='f1_weighted', n_iter=50, cv=5, n_jobs=-1, verbose=2):
     """
     Fine-tune XGBoost classifier using RandomizedSearchCV.
@@ -173,14 +154,16 @@ def tune_xgboost(X_train, y_train, scoring='f1_weighted', n_iter=50, cv=5, n_job
     return best_model, search
 
 
-xgb_tuned = tune_xgboost(X_train, y_train)[0]
-
-y1_pred = rf_model.predict(X_test)
-y2_pred = catboost_model.predict(X_test)
-y3_pred = xgb_baseline.predict(X_test)
-y4_pred = xgb_tuned.predict(X_test)
-
+# 5. Model evaluation function
 def evaluate_model(y_true, preds, model_name):
+    """
+    Evaluate model performance using multiple metrics.
+    
+    Args:
+        y_true: True labels
+        preds: Predicted labels
+        model_name: Name of the model being evaluated
+    """
     accuracy = accuracy_score(y_true, preds)
     precision = precision_score(y_true, preds, average="weighted")
     recall = recall_score(y_true, preds, average="weighted")
@@ -192,19 +175,102 @@ def evaluate_model(y_true, preds, model_name):
     print(f"Recall: {recall:.4f}")
     print(f"F1-Score: {f1:.4f}")
     print("-" * 30)
+    
+    return {
+        "model": model_name,
+        "accuracy": accuracy,
+        "precision": precision,
+        "recall": recall,
+        "f1": f1
+    }
 
-# Evaluate each model
-evaluate_model(y_test, y1_pred, "Random Forest")
-evaluate_model(y_test, y2_pred, "CatBoost")
-evaluate_model(y_test, y3_pred, "XGBoost Baseline")
-evaluate_model(y_test, y4_pred, "XGBoost Tuned")
 
-import pickle
-with open("xgb_baseline.pkl", "wb") as file:
-    pickle.dump(xgb_baseline, file)
-with open("xgb_tuned.pkl", "wb") as file:
-    pickle.dump(xgb_tuned, file)
-with open("rf_model.pkl", "wb") as file:
-    pickle.dump(rf_model, file)
-with open("catboost_model.pkl", "wb") as file:
-    pickle.dump(catboost_model, file)
+# 6. Save models to disk
+def save_models(models_dict):
+    """
+    Save trained models to disk.
+    
+    Args:
+        models_dict: Dictionary mapping model names to model objects
+    """
+    print("Saving models to disk...")
+    for name, model in models_dict.items():
+        with open(f"{name}.pkl", "wb") as file:
+            pickle.dump(model, file)
+    print("Models saved successfully!")
+
+
+# Main execution
+def main():
+    # Load dataset
+    df = load_data()
+    
+    # Preprocess data
+    df = preprocess_data(df)
+    print("Data preprocessing complete.")
+    
+    # Split data into features and target
+    X = df.drop("NObeyesdad", axis=1)
+    y = df["NObeyesdad"]
+    Y = pd.cut(y, bins=6, labels=[0, 1, 2, 3, 4, 5])  # Convert to 6 classes
+    
+    # Split into training and testing sets
+    X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.2, random_state=42)
+    print(f"Training set size: {X_train.shape[0]}, Testing set size: {X_test.shape[0]}")
+    
+    # Train models
+    print("\n" + "="*50)
+    print("Training models...")
+    print("="*50)
+    
+    # Random Forest Classifier
+    print("\nTraining Random Forest Classifier...")
+    rf_model = RandomForestClassifier(n_estimators=100, random_state=42)
+    rf_model.fit(X_train, y_train)
+
+    # CatBoost Classifier
+    print("\nTraining CatBoost Classifier...")
+    catboost_model = CatBoostClassifier(iterations=100, depth=5, learning_rate=0.1, random_state=42, verbose=False)
+    catboost_model.fit(X_train, y_train)
+
+    # Baseline XGBoost Classifier
+    print("\nTraining Baseline XGBoost Classifier...")
+    xgb_baseline = xgb.XGBClassifier(random_state=42)
+    xgb_baseline.fit(X_train, y_train)
+    
+    # Fine-tuned XGBoost Classifier
+    print("\nTraining and tuning XGBoost Classifier...")
+    xgb_tuned, _ = tune_xgboost(X_train, y_train)
+    
+    # Make predictions
+    print("\n" + "="*50)
+    print("Evaluating models...")
+    print("="*50)
+    
+    y1_pred = rf_model.predict(X_test)
+    y2_pred = catboost_model.predict(X_test)
+    y3_pred = xgb_baseline.predict(X_test)
+    y4_pred = xgb_tuned.predict(X_test)
+    
+    # Evaluate models
+    results = []
+    results.append(evaluate_model(y_test, y1_pred, "Random Forest"))
+    results.append(evaluate_model(y_test, y2_pred, "CatBoost"))
+    results.append(evaluate_model(y_test, y3_pred, "XGBoost Baseline"))
+    results.append(evaluate_model(y_test, y4_pred, "XGBoost Tuned"))
+    
+    # Save models
+    models = {
+        "rf_model": rf_model,
+        "catboost_model": catboost_model,
+        "xgb_baseline": xgb_baseline,
+        "xgb_tuned": xgb_tuned
+    }
+    save_models(models)
+    
+    # Return results for potential further analysis
+    return results
+
+
+if __name__ == "__main__":
+    main()
